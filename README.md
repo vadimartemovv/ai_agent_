@@ -1,6 +1,7 @@
 # Report AI Agent (FastAPI + local LLM)
 
-Web‑сервис принимает PDF‑отчет, делает саммари (5–10 предложений) и отвечает на вопросы по содержимому.
+Веб‑сервис принимает PDF‑отчет, делает саммари (5–10 предложений) и отвечает на вопросы по содержимому.
+Есть простая веб‑страница для запуска всех функций из браузера и потоковый статус выполнения.
 
 ## Быстрый старт
 
@@ -12,7 +13,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) Скачай локальную GGUF‑модель (например, TinyLlama 1.1B или Llama 3.2 1B Instruct в GGUF) и укажи путь:
+2) Укажи модель:
 
 ```bash
 export LLAMA_MODEL_PATH="/path/to/model.gguf"
@@ -21,6 +22,11 @@ export LLAMA_MODEL_PATH="/path/to/model.gguf"
 Либо задай прямую ссылку и сервис сам скачает модель:
 ```bash
 export LLAMA_MODEL_URL="https://.../model.gguf"
+```
+
+Рекомендованный вариант (качество/скорость): **Qwen2.5‑3B‑Instruct Q4_K_M** (~2.1 ГБ):
+```bash
+export LLAMA_MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
 ```
 
 3) Запусти сервер:
@@ -81,3 +87,4 @@ curl -X POST http://127.0.0.1:8000/qa \
 - Сервис работает полностью локально.
 - Для больших отчетов используется map‑reduce саммари по чанкам.
 - Если в отчете нет ответа, модель просится это явно сказать.
+- В `/` доступна веб‑страница с формой и статусом выполнения.
