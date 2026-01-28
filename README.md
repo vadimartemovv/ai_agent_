@@ -18,6 +18,11 @@ pip install -r requirements.txt
 export LLAMA_MODEL_PATH="/path/to/model.gguf"
 ```
 
+Либо задай прямую ссылку и сервис сам скачает модель:
+```bash
+export LLAMA_MODEL_URL="https://.../model.gguf"
+```
+
 3) Запусти сервер:
 
 ```bash
@@ -25,6 +30,9 @@ uvicorn app.main:app --reload
 ```
 
 ## API
+
+### GET /
+Веб‑страница с загрузкой PDF и кнопками для саммари и Q&A.
 
 ### POST /summary
 - form-data: `file` (PDF)
@@ -42,6 +50,15 @@ uvicorn app.main:app --reload
 ```json
 { "answer": "..." }
 ```
+
+### POST /debug_text
+Возвращает первые ~4000 символов извлечённого текста и общую длину.
+
+### POST /summary_stream
+Возвращает прогресс в виде JSON‑строк (status/summary).
+
+### POST /qa_stream
+Возвращает прогресс в виде JSON‑строк (status/answer).
 
 ### GET /health
 Ответ:
