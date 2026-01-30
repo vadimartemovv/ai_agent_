@@ -1,4 +1,5 @@
 import os
+import re
 from io import BytesIO
 from pathlib import Path
 from urllib.request import urlopen
@@ -41,6 +42,7 @@ _llm = None
 
 
 def _load_llm() -> "Llama":
+    """Load and cache the Llama model, downloading it if needed."""
     global _llm
     if _llm is not None:
         return _llm
@@ -76,6 +78,7 @@ def _load_llm() -> "Llama":
 
 
 def _download_model(url: str, dest_path: str) -> None:
+    """Download a GGUF model file to the given destination path."""
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -101,6 +104,7 @@ def _download_model(url: str, dest_path: str) -> None:
 
 
 def _extract_text_from_pdf(file_bytes: bytes) -> str:
+    """Extract concatenated text from all non-empty PDF pages."""
     reader = PdfReader(BytesIO(file_bytes))
     pages_text: List[str] = []
     for page in reader.pages:
@@ -111,6 +115,7 @@ def _extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def _chunk_text(text: str, max_chars: int = 8000) -> List[str]:
+    """Split text into fixed-size chunks by character count."""
     if len(text) <= max_chars:
         return [text]
     chunks = []
@@ -129,6 +134,7 @@ def _generate(
     repeat_penalty: float = 1.2,
     frequency_penalty: float = 0.0,
 ) -> str:
+    """Generate text from the local LLM with tuned sampling settings."""
     response = llm(
         prompt,
         max_tokens=max_tokens,
@@ -142,16 +148,18 @@ def _generate(
 
 
 def _build_summary_prompt(text: str) -> str:
+    """Build the English summary prompt for a report excerpt."""
     return (
         "You are an analyst assistant. Write in English. Produce EXACTLY 5–10 sentences. "
         "No meta commentary (e.g., 'the report says...'). "
-        "No lists or numbering, only coherent prose. "
+        "No lists or numbering, only coherent and logically ordered prose. "
         "Use only facts from the report, no speculation. Do not repeat yourself.\n\n"
         f"REPORT:\n{text}\n\nSUMMARY (5–10 sentences):\n"
     )
 
 
 def _build_qa_prompt(text: str, question: str) -> str:
+    """Build the English QA prompt for a report excerpt and question."""
     return (
         "You are an analyst assistant. Write in English. Answer only using the report content. "
         "No meta commentary or speculation. Do not repeat yourself. "
@@ -161,12 +169,20 @@ def _build_qa_prompt(text: str, question: str) -> str:
 
 
 def _split_sentences(text: str) -> List[str]:
+    """Split text into sentences using simple punctuation heuristics."""
     # Very simple sentence splitter for RU/EN punctuation.
     parts = []
     buf = []
-    for ch in text:
+    for idx, ch in enumerate(text):
         buf.append(ch)
         if ch in ".!?":
+            if ch == ".":
+                prev = text[idx - 1] if idx > 0 else ""
+                nxt = text[idx + 1] if idx + 1 < len(text) else ""
+                if prev.isdigit() and nxt.isdigit():
+                    continue
+                if nxt == ".":
+                    continue
             sentence = "".join(buf).strip()
             if sentence:
                 parts.append(sentence)
@@ -178,6 +194,7 @@ def _split_sentences(text: str) -> List[str]:
 
 
 def _sanitize_summary(text: str) -> str:
+    """Normalize summary text and remove common numbering artifacts."""
     # Remove common numbering like "1." or "8." at line starts.
     lines = []
     for line in text.splitlines():
@@ -191,6 +208,7 @@ def _sanitize_summary(text: str) -> str:
 
 
 def _is_repetitive(text: str, threshold: int = 6) -> bool:
+    """Detect repetitive 3-gram patterns to flag low-quality summaries."""
     tokens = text.lower().split()
     if len(tokens) < 20:
         return False
@@ -203,17 +221,41 @@ def _is_repetitive(text: str, threshold: int = 6) -> bool:
     return False
 
 
+def _needs_rewrite(text: str) -> bool:
+    """Detect list-like or meta-labeled summaries that need rewriting."""
+    if re.search(r"(?:^|\n)\s*(\d+[\).]|[-*•])\s+", text):
+        return True
+    if re.search(r"\b(final answer|answer:|summary:|окончательный ответ|примечания|notes:)\b", text, re.I):
+        return True
+    return False
+
+
+def _rewrite_summary(llm: "Llama", summary: str) -> str:
+    """Rewrite a draft summary into coherent English prose without lists."""
+    prompt = (
+        "Rewrite the draft summary into coherent English prose. "
+        "Keep all facts, numbers, and units exactly as stated. "
+        "Do not add new facts. Produce 5–10 sentences. "
+        "No lists, numbering, or meta labels.\n\n"
+        f"DRAFT SUMMARY:\n{summary}\n\nREWRITTEN SUMMARY:\n"
+    )
+    return _generate(llm, prompt, max_tokens=420, repeat_penalty=1.3, frequency_penalty=0.2)
+
+
 def _ensure_summary_quality(llm: "Llama", text: str, summary: str) -> str:
+    """Validate summary length/quality and retry once if needed."""
     cleaned = _sanitize_summary(summary)
+    if _needs_rewrite(cleaned):
+        cleaned = _sanitize_summary(_rewrite_summary(llm, cleaned))
     sentences = _split_sentences(cleaned)
     if 5 <= len(sentences) <= 10 and not _is_repetitive(cleaned):
         return cleaned
     # Retry once with an even stricter prompt
     retry_prompt = (
-        "Перепиши саммари СТРОГО в 5–10 предложениях, "
-        "без нумерации, без списков, без мета-ответов. "
-        "Пиши по-русски. Только факты из отчета. Не повторяйся.\n\n"
-        f"ОТЧЕТ:\n{text}\n\nСАММАРИ:\n"
+        "Rewrite the summary STRICTLY in 5–10 sentences, "
+        "with no lists, numbering, or meta commentary. "
+        "Write in English. Use only facts from the report and do not repeat yourself.\n\n"
+        f"REPORT:\n{text}\n\nSUMMARY:\n"
     )
     retry = _generate(
         llm,
@@ -232,6 +274,7 @@ def _ensure_summary_quality(llm: "Llama", text: str, summary: str) -> str:
 
 
 def _summarize_text(llm: "Llama", text: str) -> str:
+    """Summarize a report using chunking and map-reduce when needed."""
     chunks = _chunk_text(text)
     if len(chunks) == 1:
         raw = _generate(llm, _build_summary_prompt(chunks[0]), max_tokens=400)
@@ -248,6 +291,7 @@ def _summarize_text(llm: "Llama", text: str) -> str:
 
 
 def _answer_question(llm: "Llama", text: str, question: str) -> str:
+    """Answer a question using full text or a summarized context."""
     chunks = _chunk_text(text)
     if len(chunks) > 1:
         partial_summaries = []
@@ -263,6 +307,7 @@ def _answer_question(llm: "Llama", text: str, question: str) -> str:
 
 @app.post("/summary", response_model=SummaryResponse)
 async def summarize_report(file: UploadFile = File(...)) -> SummaryResponse:
+    """Summarize the uploaded PDF and return the summary."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     file_bytes = await file.read()
@@ -280,6 +325,7 @@ async def answer_question(
     question: str = Form(...),
     file: UploadFile = File(...),
 ) -> QAResponse:
+    """Answer a question about the uploaded PDF."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     if not question.strip():
@@ -297,6 +343,7 @@ async def answer_question(
 
 @app.post("/debug_text", response_model=DebugTextResponse)
 async def debug_text(file: UploadFile = File(...)) -> DebugTextResponse:
+    """Return a preview and length of extracted PDF text."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     file_bytes = await file.read()
@@ -309,11 +356,13 @@ async def debug_text(file: UploadFile = File(...)) -> DebugTextResponse:
 
 @app.get("/health")
 def health() -> dict:
+    """Simple health check endpoint."""
     return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)
 def home() -> HTMLResponse:
+    """Serve the simple HTML UI for uploads and QA."""
     html = """
 <!doctype html>
 <html lang="ru">
@@ -447,6 +496,7 @@ def home() -> HTMLResponse:
 
 @app.post("/summary_stream")
 async def summarize_report_stream(file: UploadFile = File(...)) -> StreamingResponse:
+    """Stream summary progress and final output for the uploaded PDF."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     file_bytes = await file.read()
@@ -487,6 +537,7 @@ async def answer_question_stream(
     question: str = Form(...),
     file: UploadFile = File(...),
 ) -> StreamingResponse:
+    """Stream QA progress and the final answer for the uploaded PDF."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     if not question.strip():
@@ -522,6 +573,7 @@ async def answer_question_stream(
 
 
 def _json_escape(value: str) -> str:
+    """Escape a string for newline-delimited JSON streaming output."""
     escaped = (
         value.replace("\\\\", "\\\\\\\\")
         .replace("\\n", "\\\\n")
