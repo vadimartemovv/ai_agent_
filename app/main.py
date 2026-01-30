@@ -143,20 +143,20 @@ def _generate(
 
 def _build_summary_prompt(text: str) -> str:
     return (
-        "Ты помощник-аналитик. Пиши по-английски. Составь СТРОГО 5–10 предложений. "
-        "Запрещены мета-ответы (например, 'в отчете говорится...'), "
-        "Никаких списков/нумерации, только обычный связный текст. "
-        "Только факты из отчета, без догадок. Не повторяйся.\n\n"
-        f"ОТЧЕТ:\n{text}\n\nСАММАРИ (5–10 предложений):\n"
+        "You are an analyst assistant. Write in English. Produce EXACTLY 5–10 sentences. "
+        "No meta commentary (e.g., 'the report says...'). "
+        "No lists or numbering, only coherent prose. "
+        "Use only facts from the report, no speculation. Do not repeat yourself.\n\n"
+        f"REPORT:\n{text}\n\nSUMMARY (5–10 sentences):\n"
     )
 
 
 def _build_qa_prompt(text: str, question: str) -> str:
     return (
-        "Ты помощник-аналитик. Пиши по-английски. Отвечай только по содержанию отчета. "
-        "Запрещены мета-ответы и догадки. Не повторяйся. "
-        "Если ответа нет в тексте, скажи: \"В отчете это не указано\".\n\n"
-        f"ОТЧЕТ:\n{text}\n\nВОПРОС: {question}\nОТВЕТ:\n"
+        "You are an analyst assistant. Write in English. Answer only using the report content. "
+        "No meta commentary or speculation. Do not repeat yourself. "
+        "If the answer is not in the text, say: \"The report does not specify this.\".\n\n"
+        f"REPORT:\n{text}\n\nQUESTION: {question}\nANSWER:\n"
     )
 
 
