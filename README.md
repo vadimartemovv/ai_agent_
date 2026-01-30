@@ -13,26 +13,27 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) Укажи модель:
-
-```bash
-export LLAMA_MODEL_PATH="/path/to/model.gguf"
-```
-
-Либо задай прямую ссылку и сервис сам скачает модель:
-```bash
-export LLAMA_MODEL_URL="https://.../model.gguf"
-```
-
-Рекомендованный вариант (качество/скорость): **Qwen2.5‑3B‑Instruct Q4_K_M** (~2.1 ГБ):
-```bash
-export LLAMA_MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
-```
-
-3) Запусти сервер:
+2) Запусти сервер:
 
 ```bash
 uvicorn app.main:app --reload
+```
+
+Используемая модель: **Qwen2.5‑3B‑Instruct Q4_K_M** (~2.1 ГБ). Другие GGUF‑модели можно найти здесь:
+```text
+https://huggingface.co/models?search=gguf
+```
+
+## Docker
+
+С docker‑compose (скачает модель в `./models`):
+```bash
+docker compose up --build
+```
+
+Открыть сервис:
+```bash
+http://127.0.0.1:8000
 ```
 
 ## API
